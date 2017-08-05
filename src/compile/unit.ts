@@ -3,16 +3,17 @@ import {Channel, isScaleChannel, NONSPATIAL_SCALE_CHANNELS, SCALE_CHANNELS, Scal
 import {CellConfig, Config} from '../config';
 import * as vlEncoding from '../encoding'; // TODO: remove
 import {Encoding, normalizeEncoding} from '../encoding';
-import {ChannelDef, field, FieldDef, FieldRefOption, getFieldDef, isConditionalDef, isFieldDef} from '../fielddef';
+import {ChannelDef, field, FieldDef, FieldRefOption, getFieldDef, isConditionalDef, isFieldDef, isLegendFieldDef, isScaleFieldDef} from '../fielddef';
 import {Legend} from '../legend';
 import {FILL_STROKE_CONFIG, isMarkDef, Mark, MarkDef, TEXT as TEXT_MARK} from '../mark';
+import {Projection} from '../projection';
 import {defaultScaleConfig, Domain, hasDiscreteDomain, Scale} from '../scale';
 import {SelectionDef} from '../selection';
 import {SortField, SortOrder} from '../sort';
 import {LayoutSizeMixins, UnitSpec} from '../spec';
 import {stack, StackProperties} from '../stack';
 import {Dict, duplicate, extend, vals} from '../util';
-import {VgData, VgEncodeEntry, VgLayout, VgScale, VgSignal} from '../vega.schema';
+import {VgData, VgEncodeEntry, VgLayout, VgProjection, VgScale, VgSignal} from '../vega.schema';
 import {AxisIndex} from './axis/component';
 import {parseUnitAxis} from './axis/parse';
 import {applyConfig} from './common';
@@ -27,10 +28,11 @@ import {parseUnitLegend} from './legend/parse';
 import {initEncoding} from './mark/init';
 import {parseMarkGroup} from './mark/mark';
 import {Model, ModelWithField} from './model';
+import {ProjectionComponent} from './projection/component';
 import {RepeaterValue, replaceRepeaterInEncoding} from './repeat';
 import {assembleScalesForModel} from './scale/assemble';
 import {ScaleIndex} from './scale/component';
-import {assembleTopLevelSignals, assembleUnitSelectionData, assembleUnitSelectionMarks, assembleUnitSelectionSignals, parseUnitSelection} from './selection/selection';
+import {assembleTopLevelSignals, assembleUnitSelectionData, assembleUnitSelectionMarks, assembleUnitSelectionSignals, parseUnitSelection, ProjectComponent} from './selection/selection';
 import {Split} from './split';
 
 
@@ -46,7 +48,7 @@ export class UnitModel extends ModelWithField {
   public readonly stack: StackProperties;
 
   protected specifiedAxes: AxisIndex = {};
-
+  public specifiedProjection: Projection;
   protected specifiedLegends: LegendIndex = {};
 
   public readonly selection: Dict<SelectionDef> = {};
@@ -74,6 +76,7 @@ export class UnitModel extends ModelWithField {
     this.encoding = initEncoding(this.markDef, encoding, this.stack, this.config);
 
     this.specifiedAxes = this.initAxes(encoding);
+    this.specifiedProjection = spec.projection;
     this.specifiedLegends = this.initLegend(encoding);
 
     // Selections will be initialized upon parse.
@@ -113,24 +116,28 @@ export class UnitModel extends ModelWithField {
   private initScales(mark: Mark, encoding: Encoding<string>): ScaleIndex {
     return SCALE_CHANNELS.reduce((scales, channel) => {
       let fieldDef: FieldDef<string>;
-      let specifiedScale: Scale;
+      let specifiedScale: Scale = {};
 
       const channelDef = encoding[channel];
 
       if (isFieldDef(channelDef)) {
         fieldDef = channelDef;
-        specifiedScale = channelDef.scale;
+        if (isScaleFieldDef(channelDef)) {
+          specifiedScale = channelDef.scale || {};
+        }
       } else if (isConditionalDef(channelDef) && isFieldDef(channelDef.condition)) {
         fieldDef = channelDef.condition;
-        specifiedScale = channelDef.condition.scale;
-      } else if (channel === 'x') {
+        if (isScaleFieldDef(channelDef.condition)) {
+          specifiedScale = channelDef.condition.scale || {};
+        }
+      } else if (channel === X) {
         fieldDef = getFieldDef(encoding.x2);
-      } else if (channel === 'y') {
+      } else if (channel === Y) {
         fieldDef = getFieldDef(encoding.y2);
       }
 
       if (fieldDef) {
-        scales[channel] = specifiedScale || {};
+        scales[channel] = specifiedScale;
       }
       return scales;
     }, {} as ScaleIndex);
@@ -163,8 +170,8 @@ export class UnitModel extends ModelWithField {
     return NONSPATIAL_SCALE_CHANNELS.reduce(function(_legend, channel) {
       const channelDef = encoding[channel];
       if (channelDef) {
-        const legend = isFieldDef(channelDef) ? channelDef.legend :
-          (channelDef.condition && isFieldDef(channelDef.condition)) ? channelDef.condition.legend : null;
+        const legend = isFieldDef(channelDef) && isLegendFieldDef(channelDef) ? channelDef.legend :
+          (channelDef.condition && isFieldDef(channelDef.condition)) && isLegendFieldDef(channelDef.condition) ? channelDef.condition.legend : null;
 
         if (legend !== null && legend !== false) {
           _legend[channel] = {...legend};

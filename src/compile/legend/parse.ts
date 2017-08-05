@@ -1,6 +1,7 @@
-import {Channel, COLOR, NonspatialScaleChannel, OPACITY, SHAPE, SIZE} from '../../channel';
-import {title as fieldDefTitle} from '../../fielddef';
+import {Channel, COLOR, NONSPATIAL_SCALE_CHANNELS, NonspatialScaleChannel, OPACITY, SHAPE, SIZE} from '../../channel';
+import {isGeoJSONFieldDef, title as fieldDefTitle} from '../../fielddef';
 import {Legend, LEGEND_PROPERTIES, VG_LEGEND_PROPERTIES} from '../../legend';
+import {GEOSHAPE} from '../../mark';
 import {ResolveMode} from '../../resolve';
 import {Dict, keys} from '../../util';
 import {VgLegend, VgLegendEncode} from '../../vega.schema';
@@ -16,8 +17,10 @@ import * as rules from './rules';
 
 
 export function parseUnitLegend(model: UnitModel): LegendComponentIndex {
-  return [COLOR, SIZE, SHAPE, OPACITY].reduce(function(legendComponent, channel) {
-    if (model.legend(channel)) {
+  return NONSPATIAL_SCALE_CHANNELS.reduce(function (legendComponent, channel) {
+    if (model.mark() !== GEOSHAPE
+      && !isGeoJSONFieldDef(model.encoding[channel])
+      && model.legend(channel)) {
       legendComponent[channel] = parseLegendForChannel(model, channel);
     }
     return legendComponent;
